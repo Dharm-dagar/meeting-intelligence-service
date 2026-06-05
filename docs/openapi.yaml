@@ -1,0 +1,569 @@
+openapi: 3.0.3
+info:
+  title: Meeting Intelligence Service
+  description: |
+    AI-powered meeting intelligence service that helps users manage meetings,
+    extract actionable insights, and stay on top of follow-ups.
+    
+    ## Authentication
+    Uses JWT Bearer token authentication. Register or login to get a token,
+    then include it in the `Authorization: Bearer <token>` header.
+    
+    ## Response Format
+    All responses follow a unified format:
+    ```json
+    { "traceId": "...", "success": true, "data": {} }
+    { "traceId": "...", "success": false, "error": { "code": "...", "message": "..." } }
+    ```
+  version: 1.0.0
+  contact:
+    name: Meeting Intelligence API
+
+servers:
+  - url: /api
+    description: API base path
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        traceId:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        traceId:
+          type: string
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Meeting title is required"
+
+    TranscriptEntry:
+      type: object
+      required: [timestamp, speaker, text]
+      properties:
+        timestamp:
+          type: string
+          example: "00:10"
+        speaker:
+          type: string
+          example: "Alice"
+        text:
+          type: string
+          example: "We should launch next Friday."
+
+    Citation:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          example: "00:10"
+
+    Meeting:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        title:
+          type: string
+        participants:
+          type: array
+          items:
+            type: string
+        meeting_date:
+          type: string
+          format: date-time
+        transcript:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranscriptEntry'
+        created_at:
+          type: string
+          format: date-time
+
+    ActionItem:
+      type: object
+      properties:
+        id:
+          type: string
+        meeting_id:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+        task:
+          type: string
+        assignee:
+          type: string
+        assignee_email:
+          type: string
+          nullable: true
+        due_date:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED]
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    MeetingAnalysis:
+      type: object
+      properties:
+        summary:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Citation'
+        actionItems:
+          type: array
+          items:
+            type: object
+            properties:
+              task:
+                type: string
+              assignee:
+                type: string
+              dueDate:
+                type: string
+                nullable: true
+              citations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Citation'
+        decisions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Citation'
+        followUpSuggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              citations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Citation'
+        analyzedAt:
+          type: string
+        actionItemsCreated:
+          type: integer
+
+paths:
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: alice@example.com
+                password:
+                  type: string
+                  minLength: 6
+                  example: secret123
+                name:
+                  type: string
+                  example: Alice Smith
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already taken
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login and get JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: alice@example.com
+                password:
+                  type: string
+                  example: secret123
+      responses:
+        '200':
+          description: Login successful, returns JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Invalid credentials
+
+  /meetings:
+    post:
+      tags: [Meetings]
+      summary: Create a new meeting
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, participants, meetingDate, transcript]
+              properties:
+                title:
+                  type: string
+                  example: Sprint Planning
+                participants:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+                  example: [alice@example.com, bob@example.com]
+                meetingDate:
+                  type: string
+                  format: date-time
+                  example: "2026-05-20T10:00:00Z"
+                transcript:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TranscriptEntry'
+      responses:
+        '201':
+          description: Meeting created
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+
+    get:
+      tags: [Meetings]
+      summary: List all meetings (paginated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of meetings
+
+  /meetings/{id}:
+    get:
+      tags: [Meetings]
+      summary: Get a meeting by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Meeting details
+        '404':
+          description: Meeting not found
+
+  /meetings/{id}/analyze:
+    post:
+      tags: [Meetings]
+      summary: Analyze a meeting with AI
+      description: |
+        Uses Groq (llama3-8b-8192) to analyze the meeting transcript and generate:
+        - Summary (with citations)
+        - Action Items (with citations) — automatically saved as action items
+        - Decisions (with citations)
+        - Follow-up Suggestions (with citations)
+        
+        All generated content is grounded in the provided transcript.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AI analysis results
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/MeetingAnalysis'
+        '404':
+          description: Meeting not found
+        '502':
+          description: AI provider error
+
+  /action-items:
+    post:
+      tags: [Action Items]
+      summary: Create an action item
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task, assignee]
+              properties:
+                meetingId:
+                  type: string
+                  nullable: true
+                task:
+                  type: string
+                  example: Prepare release notes
+                assignee:
+                  type: string
+                  example: Alice
+                assigneeEmail:
+                  type: string
+                  format: email
+                  example: alice@example.com
+                dueDate:
+                  type: string
+                  format: date-time
+                  example: "2026-06-10T17:00:00Z"
+                citations:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Citation'
+      responses:
+        '201':
+          description: Action item created
+
+    get:
+      tags: [Action Items]
+      summary: List action items with optional filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, IN_PROGRESS, COMPLETED]
+        - in: query
+          name: assignee
+          schema:
+            type: string
+        - in: query
+          name: meetingId
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of action items
+
+  /action-items/overdue:
+    get:
+      tags: [Action Items]
+      summary: Get all overdue action items
+      description: Returns action items where status != COMPLETED and dueDate < now
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of overdue action items
+
+  /action-items/{id}/status:
+    patch:
+      tags: [Action Items]
+      summary: Update action item status
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [PENDING, IN_PROGRESS, COMPLETED]
+      responses:
+        '200':
+          description: Status updated
+        '404':
+          description: Action item not found
+
+  /reminders/trigger:
+    post:
+      tags: [Reminders]
+      summary: Manually trigger reminders for all overdue action items right now
+      description: |
+        Immediately sends email reminders for all overdue action items that have an assignee email set.
+        A 30-minute cooldown prevents duplicate emails for the same item.
+        The scheduled job (node-cron) also runs this automatically every minute.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reminder results
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          overdueCount:
+                            type: integer
+                          sent:
+                            type: integer
+                          failed:
+                            type: integer
+                          skipped:
+                            type: integer
+                          results:
+                            type: array
+                            items:
+                              type: object
+
+  /reminders/history:
+    get:
+      tags: [Reminders]
+      summary: Get reminder delivery history (last 50)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reminder history
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          history:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                action_item_id:
+                                  type: string
+                                sent_at:
+                                  type: string
+                                channel:
+                                  type: string
+                                  example: EMAIL
+                                status:
+                                  type: string
+                                  enum: [SUCCESS, FAILED]
+                                error_message:
+                                  type: string
+                                  nullable: true
+                          total:
+                            type: integer
